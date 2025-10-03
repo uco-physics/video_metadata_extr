@@ -1,243 +1,323 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Metadata Viewer</title>
-  <style>
-    /* スタイル: BEM命名規則を採用 */
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: Arial, sans-serif;
-    }
-    .viewer {
-      display: flex;
-      flex-direction: column;
-      padding: 16px;
-      height: 100vh;
-      box-sizing: border-box;
-    }
-    .viewer__input {
-      margin-bottom: 16px;
-    }
-    .viewer__output {
-      flex: 1;
-      width: 100%;
-      resize: vertical;
-      font-family: monospace;
-      padding: 8px;
-    }
-    .viewer__buttons {
-      margin-top: 8px;
-      display: flex;
-      gap: 8px;
-    }
-    .viewer__button {
-      padding: 8px 16px;
-      cursor: pointer;
-    }
-    .viewer__button--disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
-    .viewer__log {
-      margin-top: 16px;
-      padding: 8px;
-      border: 1px solid #ccc;
-      max-height: 200px;
-      overflow-y: auto;
-      font-family: monospace;
-    }
-    .viewer__log--error {
-      color: red;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>シンプルなビデオメタデータビューアー</title>
+    <style>
+        /* スタイルガイド: CSSはBEM命名規則を採用し、シンプルに保つ。Airbnb JavaScript Style Guideに準拠したCSS構造。 */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .file-input {
+            margin-bottom: 20px;
+        }
+        .debug-toggle {
+            margin-bottom: 20px;
+        }
+        .output {
+            white-space: pre-wrap;
+            background: #eee;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        .log-output {
+            display: none;
+            background: #fff3cd;
+            padding: 10px;
+            border: 1px solid #ffeeba;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        .log-output--visible {
+            display: block;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        /* Tailwind CSSは避け、純粋CSSで実装 */
+    </style>
 </head>
 <body>
-  <div class="viewer">
-    <input type="file" class="viewer__input" id="fileInput" accept=".mp4,.wav" />
-    <textarea class="viewer__output" id="output" readonly></textarea>
-    <div class="viewer__buttons">
-      <button class="viewer__button" id="copyButton">JSONをコピー</button>
-      <button class="viewer__button" id="downloadButton">TXTとしてダウンロード</button>
-      <button class="viewer__button" id="toggleDebugButton">デバッグモード切替</button>
+    <div class="container">
+        <h1>ビデオメタデータビューアー</h1>
+        <p>MP4またはWAVファイルをアップロードして、メタデータをJSON形式で表示します。</p>
+        
+        <div class="file-input">
+            <input type="file" id="fileInput" accept=".mp4,.wav">
+        </div>
+        
+        <div class="debug-toggle">
+            <label>
+                <input type="checkbox" id="debugMode"> デバッグモードを有効にする
+            </label>
+        </div>
+        
+        <pre id="output" class="output">ここにメタデータが表示されます。</pre>
+        
+        <div id="logOutput" class="log-output"></div>
+        
+        <div class="actions">
+            <button id="copyButton" disabled>JSONをコピー</button>
+            <button id="downloadButton" disabled>TXTとしてダウンロード</button>
+        </div>
     </div>
-    <div class="viewer__log" id="logOutput"></div>
-  </div>
 
-  <script type="text/javascript" src="https://unpkg.com/mediainfo.js@0.3.4"></script>
-  <script>
-    // モジュールパターンでコードをカプセル化
-    (function VideoMetadataViewer() {
-      // 定数
-      const SUPPORTED_FORMATS = ['mp4', 'wav'];
-      const OUTPUT_FORMAT = 'JSON';
+    <!-- mediainfo.jsのCDNを丁寧に読み込み。エラーハンドリング付きでスクリプトをロード -->
+    <script type="text/javascript">
+        // コーディング規約: Airbnb JavaScript Style Guideを採用。セミコロン使用、シングルクォート、インデント2スペース。
+        // デザインパターン: Module Patternを採用し、コードをモジュール化。拡張性のために、関数を分割し、API化しやすい構造。
+        // 標準規格: ECMAScript 2020準拠。Promiseベースの非同期処理。
+        // コメント: 日本語で記述。
+        // 拡張性: メタデータ抽出部分を別関数にし、後から他のライブラリ追加可能。ログを中央集約。
+        // デバッグ: ログを配列に蓄積し、UIに表示。エラー箇所と詳細を記録。
+        // API化しやすさ: 主要関数をエクスポート可能風に設計（windowにマウント）。
+        // リファクタリングしやすさ: 変数名明確、関数単一責任。
 
-      // 状態管理
-      let isDebugMode = false;
-      let mediaInfoInstance = null;
+        (function() {
+            'use strict';
 
-      // 要素キャッシュ
-      const elements = {
-        fileInput: document.getElementById('fileInput'),
-        output: document.getElementById('output'),
-        copyButton: document.getElementById('copyButton'),
-        downloadButton: document.getElementById('downloadButton'),
-        toggleDebugButton: document.getElementById('toggleDebugButton'),
-        logOutput: document.getElementById('logOutput'),
-      };
+            // モジュール定義: MetadataViewer
+            const MetadataViewer = (function() {
+                // プライベート変数
+                let mediainfoInstance = null;
+                let logs = [];
+                let isDebugMode = false;
+                let currentMetadata = null;
 
-      // ログ管理モジュール
-      const Logger = {
-        log(message) {
-          if (isDebugMode) {
-            elements.logOutput.innerHTML += `<div>${new Date().toISOString()}: ${message}</div>`;
-            elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
-          }
-        },
-        error(message, error) {
-          const errorMessage = `${message}: ${error.message}\n${error.stack}`;
-          elements.logOutput.innerHTML += `<div class="viewer__log--error">${new Date().toISOString()}: ${errorMessage}</div>`;
-          elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
-        },
-        clear() {
-          elements.logOutput.innerHTML = '';
-        },
-      };
+                // ログ追加関数
+                function addLog(message, isError = false) {
+                    const timestamp = new Date().toISOString();
+                    const type = isError ? 'ERROR' : 'INFO';
+                    const logEntry = `[${timestamp}] [${type}] ${message}`;
+                    logs.push(logEntry);
+                    if (isDebugMode) {
+                        updateLogOutput();
+                    }
+                    console.log(logEntry); // コンソールにも出力
+                }
 
-      // ファイル処理モジュール
-      const FileProcessor = {
-        async readChunk(file, chunkSize, offset) {
-          Logger.log(`チャンク読み込み開始: offset=${offset}, size=${chunkSize}`);
-          try {
-            const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
-            return new Uint8Array(buffer);
-          } catch (error) {
-            Logger.error('チャンク読み込みエラー', error);
-            throw error;
-          }
-        },
+                // ログ出力更新
+                function updateLogOutput() {
+                    const logOutput = document.getElementById('logOutput');
+                    logOutput.innerText = logs.join('\n');
+                    logOutput.classList.add('log-output--visible');
+                }
 
-        async analyzeFile(file) {
-          Logger.log('ファイル解析開始');
-          if (!mediaInfoInstance) {
-            throw new Error('MediaInfoインスタンスが初期化されていません');
-          }
-          try {
-            const result = await mediaInfoInstance.analyzeData(
-              file.size,
-              (chunkSize, offset) => this.readChunk(file, chunkSize, offset)
-            );
-            Logger.log('ファイル解析完了');
-            return result;
-          } catch (error) {
-            Logger.error('ファイル解析エラー', error);
-            throw error;
-          }
-        },
+                // ログクリア
+                function clearLogs() {
+                    logs = [];
+                    const logOutput = document.getElementById('logOutput');
+                    logOutput.innerText = '';
+                    if (!isDebugMode) {
+                        logOutput.classList.remove('log-output--visible');
+                    }
+                }
 
-        validateFile(file) {
-          const extension = file.name.split('.').pop().toLowerCase();
-          if (!SUPPORTED_FORMATS.includes(extension)) {
-            throw new Error(`サポートされていないファイル形式: ${extension}`);
-          }
-          Logger.log(`ファイル検証成功: ${file.name}`);
-        },
-      };
+                // mediainfo.jsの初期化（非同期）
+                async function initializeMediaInfo() {
+                    addLog('mediainfo.jsの初期化を開始');
+                    try {
+                        // 参考: mediainfo.jsのfactoryを使用。オプションでJSON形式指定。
+                        // 拡張性: ここで他のオプションを追加可能。
+                        const mediaInfoFactory = window.MediaInfo.default; // CDNからロードされたもの
+                        mediainfoInstance = await mediaInfoFactory({
+                            format: 'JSON', // JSON形式で出力
+                            full: true // 全ての内部タグを表示
+                        });
+                        addLog('mediainfo.jsの初期化完了');
+                    } catch (error) {
+                        addLog(`mediainfo.js初期化エラー: ${error.stack}`, true);
+                        throw error;
+                    }
+                }
 
-      // 表示管理モジュール
-      const View = {
-        setOutput(data) {
-          elements.output.value = JSON.stringify(data, null, 2);
-        },
+                // ファイル分析関数（拡張ポイント: 他のライブラリ統合可能）
+                async function analyzeFile(file) {
+                    addLog(`ファイル分析開始: ${file.name}`);
+                    if (!mediainfoInstance) {
+                        addLog('mediainfoInstanceが未初期化', true);
+                        throw new Error('MediaInfo not initialized');
+                    }
 
-        clearOutput() {
-          elements.output.value = '';
-        },
+                    const fileSize = file.size;
+                    const readChunk = async (chunkSize, offset) => {
+                        addLog(`チャンク読み込み: offset=${offset}, size=${chunkSize}`);
+                        try {
+                            const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
+                            return new Uint8Array(buffer);
+                        } catch (error) {
+                            addLog(`チャンク読み込みエラー: ${error.stack}`, true);
+                            throw error;
+                        }
+                    };
 
-        setButtonState(isProcessing) {
-          elements.fileInput.disabled = isProcessing;
-          elements.copyButton.disabled = isProcessing || !elements.output.value;
-          elements.downloadButton.disabled = isProcessing || !elements.output.value;
-          elements.fileInput.classList.toggle('viewer__button--disabled', isProcessing);
-          elements.copyButton.classList.toggle('viewer__button--disabled', isProcessing || !elements.output.value);
-          elements.downloadButton.classList.toggle('viewer__button--disabled', isProcessing || !elements.output.value);
-        },
+                    try {
+                        const result = await mediainfoInstance.analyzeData(fileSize, readChunk);
+                        addLog('ファイル分析完了');
+                        return JSON.parse(result); // JSON文字列をオブジェクトに変換（表示用）
+                    } catch (error) {
+                        addLog(`ファイル分析エラー: ${error.stack}`, true);
+                        throw error;
+                    }
+                }
 
-        copyToClipboard() {
-          navigator.clipboard.writeText(elements.output.value)
-            .then(() => Logger.log('JSONをクリップボードにコピーしました'))
-            .catch((error) => Logger.error('クリップボードコピーエラー', error));
-        },
+                // 出力更新
+                function updateOutput(metadata) {
+                    const output = document.getElementById('output');
+                    output.innerText = JSON.stringify(metadata, null, 2);
+                    currentMetadata = metadata;
+                    enableActions();
+                }
 
-        downloadAsTxt() {
-          const blob = new Blob([elements.output.value], { type: 'text/plain' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'metadata.txt';
-          a.click();
-          URL.revokeObjectURL(url);
-          Logger.log('TXTファイルとしてダウンロードしました');
-        },
-      };
+                // アクションボタン有効化
+                function enableActions() {
+                    document.getElementById('copyButton').disabled = false;
+                    document.getElementById('downloadButton').disabled = false;
+                }
 
-      // コントローラーモジュール
-      const Controller = {
-        async init() {
-          Logger.log('アプリケーション初期化開始');
-          try {
-            mediaInfoInstance = await window.mediaInfoFactory({
-              format: OUTPUT_FORMAT,
-              locateFile: () => 'https://unpkg.com/mediainfo.js@0.3.4/dist/MediaInfoModule.wasm'
+                // コピー機能
+                function copyToClipboard() {
+                    if (!currentMetadata) return;
+                    addLog('JSONコピー実行');
+                    const text = JSON.stringify(currentMetadata, null, 2);
+                    navigator.clipboard.writeText(text).then(() => {
+                        addLog('コピー成功');
+                        alert('JSONをクリップボードにコピーしました。');
+                    }).catch((error) => {
+                        addLog(`コピーエラー: ${error.stack}`, true);
+                    });
+                }
+
+                // ダウンロード機能
+                function downloadAsTxt() {
+                    if (!currentMetadata) return;
+                    addLog('TXTダウンロード実行');
+                    const text = JSON.stringify(currentMetadata, null, 2);
+                    const blob = new Blob([text], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'metadata.txt';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    addLog('ダウンロード成功');
+                }
+
+                // イベントリスナー設定
+                function setupListeners() {
+                    const fileInput = document.getElementById('fileInput');
+                    const debugCheckbox = document.getElementById('debugMode');
+                    const copyButton = document.getElementById('copyButton');
+                    const downloadButton = document.getElementById('downloadButton');
+
+                    debugCheckbox.addEventListener('change', (e) => {
+                        isDebugMode = e.target.checked;
+                        addLog(`デバッグモード変更: ${isDebugMode}`);
+                        if (isDebugMode) {
+                            updateLogOutput();
+                        } else {
+                            document.getElementById('logOutput').classList.remove('log-output--visible');
+                        }
+                    });
+
+                    fileInput.addEventListener('change', async () => {
+                        clearLogs();
+                        addLog('ファイル選択イベント');
+                        const file = fileInput.files[0];
+                        if (!file) {
+                            addLog('ファイル未選択', true);
+                            return;
+                        }
+                        // ボタンはdisabledにせず、複数処理可能（ただし同時処理は避けるため、シンプルに順次）
+                        // アップロードボタンが押せなくなるのを避ける: disabledにしない
+                        try {
+                            if (!mediainfoInstance) {
+                                await initializeMediaInfo();
+                            }
+                            const metadata = await analyzeFile(file);
+                            updateOutput(metadata);
+                        } catch (error) {
+                            updateOutput({ error: '処理中にエラーが発生しました。ログを確認してください。' });
+                        }
+                    });
+
+                    copyButton.addEventListener('click', copyToClipboard);
+                    downloadButton.addEventListener('click', downloadAsTxt);
+                }
+
+                // 初期化関数（公開）
+                function init() {
+                    addLog('MetadataViewer初期化');
+                    setupListeners();
+                }
+
+                // 公開API（拡張用）
+                return {
+                    init,
+                    analyzeFile, // API化しやすくエクスポート
+                    addLog // デバッグ用
+                };
+            })();
+
+            // CDNロード確認と初期化
+            function loadMediaInfoCDN(callback) {
+                if (window.MediaInfo) {
+                    callback();
+                    return;
+                }
+                const script = document.createElement('script');
+                script.type = 'text/javascript';
+                script.src = 'https://unpkg.com/mediainfo.js';
+                script.onload = callback;
+                script.onerror = () => {
+                    console.error('mediainfo.jsのロードに失敗しました。');
+                    // UIにエラー表示（拡張ポイント）
+                    document.getElementById('output').innerText = 'ライブラリのロードに失敗しました。';
+                };
+                document.head.appendChild(script);
+            }
+
+            // アプリケーション起動
+            loadMediaInfoCDN(() => {
+                MetadataViewer.init();
             });
-            Logger.log('MediaInfoインスタンス初期化完了');
-            this.bindEvents();
-            View.setButtonState(false);
-          } catch (error) {
-            Logger.error('初期化エラー', error);
-            View.setButtonState(false);
-          }
-        },
-
-        bindEvents() {
-          elements.fileInput.addEventListener('change', () => this.handleFileChange());
-          elements.copyButton.addEventListener('click', () => View.copyToClipboard());
-          elements.downloadButton.addEventListener('click', () => View.downloadAsTxt());
-          elements.toggleDebugButton.addEventListener('click', () => this.toggleDebugMode());
-        },
-
-        async handleFileChange() {
-          const file = elements.fileInput.files[0];
-          if (!file) return;
-
-          View.setButtonState(true);
-          View.clearOutput();
-          Logger.clear();
-
-          try {
-            FileProcessor.validateFile(file);
-            const result = await FileProcessor.analyzeFile(file);
-            View.setOutput(result);
-          } catch (error) {
-            View.setOutput({ error: error.message });
-          } finally {
-            View.setButtonState(false);
-          }
-        },
-
-        toggleDebugMode() {
-          isDebugMode = !isDebugMode;
-          elements.toggleDebugButton.textContent = `デバッグモード: ${isDebugMode ? 'ON' : 'OFF'}`;
-          Logger.log(`デバッグモード: ${isDebugMode ? '有効' : '無効'}`);
-          if (!isDebugMode) Logger.clear();
-        },
-      };
-
-      // 初期化
-      Controller.init();
-    })();
-  </script>
+        })();
+    </script>
 </body>
 </html>
