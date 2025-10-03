@@ -1,195 +1,240 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ビデオメタデータビューアー</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Metadata Viewer</title>
   <style>
-    /* 基本スタイル: シンプルでレスポンシブなデザイン */
+    /* スタイル: BEM命名規則を採用 */
     body {
-      font-family: Arial, sans-serif;
       margin: 0;
-      padding: 16px;
-      background-color: #f4f4f4;
+      padding: 0;
+      font-family: Arial, sans-serif;
     }
-    #wrapper {
-      max-width: 800px;
-      margin: 0 auto;
+    .viewer {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      padding: 16px;
+      height: 100vh;
+      box-sizing: border-box;
     }
-    #fileInput {
+    .viewer__input {
+      margin-bottom: 16px;
+    }
+    .viewer__output {
+      flex: 1;
+      width: 100%;
+      resize: vertical;
+      font-family: monospace;
       padding: 8px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
     }
-    #controls {
+    .viewer__buttons {
+      margin-top: 8px;
       display: flex;
       gap: 8px;
-      flex-wrap: wrap;
     }
-    button {
+    .viewer__button {
       padding: 8px 16px;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
       cursor: pointer;
     }
-    button:hover {
-      background-color: #0056b3;
-    }
-    button:disabled {
-      background-color: #ccc;
+    .viewer__button--disabled {
       cursor: not-allowed;
+      opacity: 0.5;
     }
-    #output {
-      width: 100%;
-      height: 400px;
+    .viewer__log {
+      margin-top: 16px;
+      padding: 8px;
       border: 1px solid #ccc;
-      border-radius: 4px;
-      padding: 8px;
+      max-height: 200px;
+      overflow-y: auto;
       font-family: monospace;
-      background-color: white;
     }
-    #errorLog {
-      display: none;
+    .viewer__log--error {
       color: red;
-      padding: 8px;
-      border: 1px solid red;
-      border-radius: 4px;
-      background-color: #ffe6e6;
-    }
-    #debugToggle:checked ~ #errorLog {
-      display: block;
     }
   </style>
 </head>
 <body>
-  <div id="wrapper">
-    <h1>ビデオメタデータビューアー</h1>
-    <input type="file" id="fileInput" accept=".mp4,.wav">
-    <div id="controls">
-      <button id="copyButton" disabled>メタデータをコピー</button>
-      <button id="downloadButton" disabled>TXTとしてダウンロード</button>
-      <label><input type="checkbox" id="debugToggle"> デバッグモード</label>
+  <div class="viewer">
+    <input type="file" class="viewer__input" id="fileInput" accept=".mp4,.wav" />
+    <textarea class="viewer__output" id="output" readonly></textarea>
+    <div class="viewer__buttons">
+      <button class="viewer__button" id="copyButton">JSONをコピー</button>
+      <button class="viewer__button" id="downloadButton">TXTとしてダウンロード</button>
+      <button class="viewer__button" id="toggleDebugButton">デバッグモード切替</button>
     </div>
-    <textarea id="output" readonly>ここにメタデータが表示されます...</textarea>
-    <div id="errorLog"></div>
+    <div class="viewer__log" id="logOutput"></div>
   </div>
 
   <script type="text/javascript" src="https://unpkg.com/mediainfo.js"></script>
   <script>
-    // モジュールパターンでコードを構造化
-    const VideoMetadataViewer = (function () {
-      // プライベート変数
-      let mediaInfoInstance = null;
-      let isProcessing = false;
+    // モジュールパターンでコードをカプセル化
+    (function VideoMetadataViewer() {
+      // 定数
+      const SUPPORTED_FORMATS = ['mp4', 'wav'];
+      const OUTPUT_FORMAT = 'JSON';
 
-      // DOM要素のキャッシュ
+      // 状態管理
+      let isDebugMode = false;
+      let mediaInfoInstance = null;
+
+      // 要素キャッシュ
       const elements = {
         fileInput: document.getElementById('fileInput'),
         output: document.getElementById('output'),
-        errorLog: document.getElementById('errorLog'),
         copyButton: document.getElementById('copyButton'),
         downloadButton: document.getElementById('downloadButton'),
-        debugToggle: document.getElementById('debugToggle'),
+        toggleDebugButton: document.getElementById('toggleDebugButton'),
+        logOutput: document.getElementById('logOutput'),
       };
 
-      // 初期化処理
-      async function init() {
-        try {
-          // MediaInfo.jsのインスタンスを作成
-          mediaInfoInstance = await window.mediaInfoFactory({ format: 'JSON' });
-          elements.fileInput.addEventListener('change', handleFileChange);
-          elements.copyButton.addEventListener('click', copyMetadata);
-          elements.downloadButton.addEventListener('click', downloadMetadata);
-          elements.debugToggle.addEventListener('change', toggleDebugMode);
-          enableButtons(false);
-        } catch (error) {
-          logError('MediaInfo初期化エラー', error);
-        }
-      }
-
-      // ファイル変更ハンドラ
-      async function handleFileChange(event) {
-        if (isProcessing) return; // 重複処理防止
-        isProcessing = true;
-        enableButtons(false);
-
-        const file = event.target.files[0];
-        if (!file) {
-          logError('ファイルが選択されていません');
-          isProcessing = false;
-          return;
-        }
-
-        try {
-          const readChunk = async (chunkSize, offset) =>
-            new Uint8Array(await file.slice(offset, offset + chunkSize).arrayBuffer());
-          const result = await mediaInfoInstance.analyzeData(file.size, readChunk);
-          displayMetadata(result);
-          enableButtons(true);
-        } catch (error) {
-          logError('メタデータ取得エラー', error);
-          displayMetadata('メタデータの取得に失敗しました。');
-        } finally {
-          isProcessing = false;
-        }
-      }
-
-      // メタデータ表示
-      function displayMetadata(data) {
-        elements.output.value = typeof data === 'string' ? data : JSON.stringify(JSON.parse(data), null, 2);
-      }
-
-      // エラーログ
-      function logError(message, error = {}) {
-        const errorMessage = `${message}\n詳細: ${error.message || '不明'}\nスタック: ${error.stack || 'なし'}`;
-        elements.errorLog.textContent = errorMessage;
-        if (!elements.debugToggle.checked) {
-          elements.errorLog.style.display = 'none';
-        }
-      }
-
-      // ボタンの有効/無効化
-      function enableButtons(enabled) {
-        elements.copyButton.disabled = !enabled;
-        elements.downloadButton.disabled = !enabled;
-      }
-
-      // メタデータコピー
-      function copyMetadata() {
-        navigator.clipboard.writeText(elements.output.value)
-          .then(() => alert('メタデータをクリップボードにコピーしました！'))
-          .catch((error) => logError('コピーエラー', error));
-      }
-
-      // メタデータダウンロード
-      function downloadMetadata() {
-        const blob = new Blob([elements.output.value], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'metadata.txt';
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-
-      // デバッグモードトグル
-      function toggleDebugMode() {
-        elements.errorLog.style.display = elements.debugToggle.checked ? 'block' : 'none';
-      }
-
-      // 公開API
-      return {
-        init,
+      // ログ管理モジュール
+      const Logger = {
+        log(message) {
+          if (isDebugMode) {
+            elements.logOutput.innerHTML += `<div>${new Date().toISOString()}: ${message}</div>`;
+            elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
+          }
+        },
+        error(message, error) {
+          const errorMessage = `${message}: ${error.message}\n${error.stack}`;
+          elements.logOutput.innerHTML += `<div class="viewer__log--error">${new Date().toISOString()}: ${errorMessage}</div>`;
+          elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
+        },
+        clear() {
+          elements.logOutput.innerHTML = '';
+        },
       };
-    }());
 
-    // アプリケーション起動
-    VideoMetadataViewer.init();
+      // ファイル処理モジュール
+      const FileProcessor = {
+        async readChunk(file, chunkSize, offset) {
+          Logger.log(`チャンク読み込み開始: offset=${offset}, size=${chunkSize}`);
+          try {
+            const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
+            return new Uint8Array(buffer);
+          } catch (error) {
+            Logger.error('チャンク読み込みエラー', error);
+            throw error;
+          }
+        },
+
+        async analyzeFile(file) {
+          Logger.log('ファイル解析開始');
+          if (!mediaInfoInstance) {
+            throw new Error('MediaInfoインスタンスが初期化されていません');
+          }
+          try {
+            const result = await mediaInfoInstance.analyzeData(
+              file.size,
+              (chunkSize, offset) => this.readChunk(file, chunkSize, offset)
+            );
+            Logger.log('ファイル解析完了');
+            return result;
+          } catch (error) {
+            Logger.error('ファイル解析エラー', error);
+            throw error;
+          }
+        },
+
+        validateFile(file) {
+          const extension = file.name.split('.').pop().toLowerCase();
+          if (!SUPPORTED_FORMATS.includes(extension)) {
+            throw new Error(`サポートされていないファイル形式: ${extension}`);
+          }
+          Logger.log(`ファイル検証成功: ${file.name}`);
+        },
+      };
+
+      // 表示管理モジュール
+      const View = {
+        setOutput(data) {
+          elements.output.value = JSON.stringify(data, null, 2);
+        },
+
+        clearOutput() {
+          elements.output.value = '';
+        },
+
+        setButtonState(isProcessing) {
+          elements.fileInput.disabled = isProcessing;
+          elements.copyButton.disabled = isProcessing || !elements.output.value;
+          elements.downloadButton.disabled = isProcessing || !elements.output.value;
+          elements.fileInput.classList.toggle('viewer__button--disabled', isProcessing);
+          elements.copyButton.classList.toggle('viewer__button--disabled', isProcessing || !elements.output.value);
+          elements.downloadButton.classList.toggle('viewer__button--disabled', isProcessing || !elements.output.value);
+        },
+
+        copyToClipboard() {
+          navigator.clipboard.writeText(elements.output.value)
+            .then(() => Logger.log('JSONをクリップボードにコピーしました'))
+            .catch((error) => Logger.error('クリップボードコピーエラー', error));
+        },
+
+        downloadAsTxt() {
+          const blob = new Blob([elements.output.value], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'metadata.txt';
+          a.click();
+          URL.revokeObjectURL(url);
+          Logger.log('TXTファイルとしてダウンロードしました');
+        },
+      };
+
+      // コントローラーモジュール
+      const Controller = {
+        async init() {
+          Logger.log('アプリケーション初期化開始');
+          try {
+            mediaInfoInstance = await window.mediaInfoFactory({ format: OUTPUT_FORMAT });
+            Logger.log('MediaInfoインスタンス初期化完了');
+            this.bindEvents();
+            View.setButtonState(false);
+          } catch (error) {
+            Logger.error('初期化エラー', error);
+            View.setButtonState(false);
+          }
+        },
+
+        bindEvents() {
+          elements.fileInput.addEventListener('change', () => this.handleFileChange());
+          elements.copyButton.addEventListener('click', () => View.copyToClipboard());
+          elements.downloadButton.addEventListener('click', () => View.downloadAsTxt());
+          elements.toggleDebugButton.addEventListener('click', () => this.toggleDebugMode());
+        },
+
+        async handleFileChange() {
+          const file = elements.fileInput.files[0];
+          if (!file) return;
+
+          View.setButtonState(true);
+          View.clearOutput();
+          Logger.clear();
+
+          try {
+            FileProcessor.validateFile(file);
+            const result = await FileProcessor.analyzeFile(file);
+            View.setOutput(result);
+          } catch (error) {
+            View.setOutput({ error: error.message });
+          } finally {
+            View.setButtonState(false);
+          }
+        },
+
+        toggleDebugMode() {
+          isDebugMode = !isDebugMode;
+          elements.toggleDebugButton.textContent = `デバッグモード: ${isDebugMode ? 'ON' : 'OFF'}`;
+          Logger.log(`デバッグモード: ${isDebugMode ? '有効' : '無効'}`);
+          if (!isDebugMode) Logger.clear();
+        },
+      };
+
+      // 初期化
+      Controller.init();
+    })();
   </script>
 </body>
 </html>
