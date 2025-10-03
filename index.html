@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Metadata Viewer</title>
+  <style>
+    /* BEM命名規則を採用したCSS。モダンでシンプルなデザイン */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f4f4f9;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .input__file {
+      margin-bottom: 20px;
+    }
+    .output__json {
+      background: #f8f8f8;
+      padding: 15px;
+      border-radius: 4px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    .button {
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    .button:hover {
+      background-color: #0056b3;
+    }
+    .error {
+      color: #dc3545;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ビデオメタデータビューア</h1>
+    <input type="file" class="input__file" accept=".mp4,.wav" />
+    <div class="output__json" id="jsonOutput"></div>
+    <button class="button" id="copyButton" disabled>JSONをコピー</button>
+    <button class="button" id="downloadButton" disabled>TXTとしてダウンロード</button>
+    <div class="error" id="errorMessage"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ffprobe-static@1.0.0/ffprobe.min.js"></script>
+  <script>
+    // モジュールパターンでコードを構造化。拡張性と再利用性を確保
+    const MetadataViewer = (function() {
+      // プライベート変数
+      const fileInput = document.querySelector('.input__file');
+      const jsonOutput = document.querySelector('#jsonOutput');
+      const copyButton = document.querySelector('#copyButton');
+      const downloadButton = document.querySelector('#downloadButton');
+      const errorMessage = document.querySelector('#errorMessage');
+
+      // メタデータ抽出処理
+      async function extractMetadata(file) {
+        try {
+          // エラーメッセージをクリア
+          errorMessage.textContent = '';
+          jsonOutput.textContent = 'メタデータを取得中...';
+
+          // FileReaderでファイルを読み込み
+          const arrayBuffer = await file.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+
+          // ffprobeを使用してメタデータを取得
+          const result = await window.FFprobe.getInfo(uint8Array, file.name);
+          const metadata = JSON.stringify(result, null, 2);
+
+          // メタデータを表示
+          jsonOutput.textContent = metadata;
+          copyButton.disabled = false;
+          downloadButton.disabled = false;
+
+          return metadata;
+        } catch (error) {
+          // エラーハンドリング
+          console.error('メタデータ取得エラー:', error);
+          errorMessage.textContent = 'エラー: メタデータの取得に失敗しました。';
+          jsonOutput.textContent = '';
+          copyButton.disabled = true;
+          downloadButton.disabled = true;
+        }
+      }
+
+      // JSONをクリップボードにコピー
+      function copyToClipboard() {
+        const text = jsonOutput.textContent;
+        if (text) {
+          navigator.clipboard.writeText(text)
+            .then(() => alert('JSONをクリップボードにコピーしました'))
+            .catch(err => {
+              console.error('コピー失敗:', err);
+              errorMessage.textContent = 'エラー: コピーに失敗しました。';
+            });
+        }
+      }
+
+      // TXTファイルとしてダウンロード
+      function downloadAsTxt() {
+        const text = jsonOutput.textContent;
+        if (text) {
+          const blob = new Blob([text], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'metadata.txt';
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      }
+
+      // イベントリスナーの設定
+      function init() {
+        fileInput.addEventListener('change', async (event) => {
+          const file = event.target.files[0];
+          if (file && (file.type === 'video/mp4' || file.type === 'audio/wav')) {
+            await extractMetadata(file);
+          } else {
+            errorMessage.textContent = 'エラー: MP4またはWAVファイルを選択してください。';
+            jsonOutput.textContent = '';
+            copyButton.disabled = true;
+            downloadButton.disabled = true;
+          }
+        });
+
+        copyButton.addEventListener('click', copyToClipboard);
+        downloadButton.addEventListener('click', downloadAsTxt);
+      }
+
+      // パブリックAPI
+      return {
+        init: init,
+        extractMetadata: extractMetadata // 拡張用に公開
+      };
+    })();
+
+    // 初期化
+    MetadataViewer.init();
+  </script>
+</body>
+</html>
