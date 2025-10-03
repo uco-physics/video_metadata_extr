@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Metadata Viewer</title>
   <style>
-    /* BEM命名規則を採用したCSS。モダンでシンプルなデザイン */
+    /* BEM命名規則を採用したCSS */
     body {
       font-family: Arial, sans-serif;
       margin: 0;
@@ -23,6 +23,9 @@
     .input__file {
       margin-bottom: 20px;
     }
+    .input__debug-toggle {
+      margin-bottom: 20px;
+    }
     .output__json {
       background: #f8f8f8;
       padding: 15px;
@@ -31,6 +34,16 @@
       overflow-y: auto;
       white-space: pre-wrap;
       font-family: monospace;
+    }
+    .output__debug {
+      background: #ffe6e6;
+      padding: 15px;
+      border-radius: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      font-family: monospace;
+      display: none;
     }
     .button {
       padding: 10px 20px;
@@ -53,52 +66,97 @@
 <body>
   <div class="container">
     <h1>ビデオメタデータビューア</h1>
+    <label class="input__debug-toggle">
+      <input type="checkbox" id="debugToggle"> デバッグモード
+    </label>
     <input type="file" class="input__file" accept=".mp4,.wav" />
     <div class="output__json" id="jsonOutput"></div>
+    <div class="output__debug" id="debugOutput"></div>
     <button class="button" id="copyButton" disabled>JSONをコピー</button>
     <button class="button" id="downloadButton" disabled>TXTとしてダウンロード</button>
+    <button class="button" id="copyDebugButton" disabled>デバッグ情報をコピー</button>
     <div class="error" id="errorMessage"></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/ffprobe-static@1.0.0/ffprobe.min.js"></script>
   <script>
-    // モジュールパターンでコードを構造化。拡張性と再利用性を確保
+    // モジュールパターンでコードを構造化
     const MetadataViewer = (function() {
       // プライベート変数
       const fileInput = document.querySelector('.input__file');
+      const debugToggle = document.querySelector('#debugToggle');
       const jsonOutput = document.querySelector('#jsonOutput');
+      const debugOutput = document.querySelector('#debugOutput');
       const copyButton = document.querySelector('#copyButton');
       const downloadButton = document.querySelector('#downloadButton');
+      const copyDebugButton = document.querySelector('#copyDebugButton');
       const errorMessage = document.querySelector('#errorMessage');
+      let isDebugMode = false;
+
+      // デバッグログを追加
+      function logDebug(step, message, error = null) {
+        if (!isDebugMode) return;
+        const timestamp = new Date().toLocaleTimeString('ja-JP');
+        let log = `[${timestamp}] ${step}: ${message}`;
+        if (error) {
+          log += `\n詳細: ${error.message}\nスタックトレース: ${error.stack || 'なし'}`;
+        }
+        debugOutput.textContent += log + '\n\n';
+        debugOutput.style.display = 'block';
+        copyDebugButton.disabled = false;
+      }
 
       // メタデータ抽出処理
       async function extractMetadata(file) {
         try {
-          // エラーメッセージをクリア
+          // エラーメッセージとデバッグ出力をクリア
           errorMessage.textContent = '';
+          debugOutput.textContent = '';
           jsonOutput.textContent = 'メタデータを取得中...';
+          logDebug('初期化', 'メタデータ抽出プロセスを開始');
+
+          // ファイルの検証
+          if (!file) {
+            throw new Error('ファイルが選択されていません');
+          }
+          logDebug('ファイル検証', `ファイル名: ${file.name}, タイプ: ${file.type}`);
+
+          // サポートされた形式か確認
+          if (file.type !== 'video/mp4' && file.type !== 'audio/wav') {
+            throw new Error('サポートされていないファイル形式です');
+          }
 
           // FileReaderでファイルを読み込み
+          logDebug('ファイル読み込み', 'FileReaderでファイルを読み込み開始');
           const arrayBuffer = await file.arrayBuffer();
           const uint8Array = new Uint8Array(arrayBuffer);
+          logDebug('ファイル読み込み', 'ファイルデータをArrayBufferに変換完了');
 
           // ffprobeを使用してメタデータを取得
+          logDebug('メタデータ取得', 'FFprobeでメタデータ抽出開始');
+          if (!window.FFprobe) {
+            throw new Error('FFprobeライブラリがロードされていません');
+          }
           const result = await window.FFprobe.getInfo(uint8Array, file.name);
-          const metadata = JSON.stringify(result, null, 2);
+          logDebug('メタデータ取得', 'メタデータ抽出完了');
 
           // メタデータを表示
+          const metadata = JSON.stringify(result, null, 2);
           jsonOutput.textContent = metadata;
           copyButton.disabled = false;
           downloadButton.disabled = false;
+          logDebug('表示', 'メタデータをJSON形式で表示完了');
 
           return metadata;
         } catch (error) {
           // エラーハンドリング
           console.error('メタデータ取得エラー:', error);
-          errorMessage.textContent = 'エラー: メタデータの取得に失敗しました。';
+          logDebug('エラー', 'メタデータ取得中にエラーが発生', error);
+          errorMessage.textContent = `エラー: メタデータの取得に失敗しました（${error.message}）`;
           jsonOutput.textContent = '';
           copyButton.disabled = true;
           downloadButton.disabled = true;
+          copyDebugButton.disabled = !isDebugMode;
         }
       }
 
@@ -107,10 +165,31 @@
         const text = jsonOutput.textContent;
         if (text) {
           navigator.clipboard.writeText(text)
-            .then(() => alert('JSONをクリップボードにコピーしました'))
+            .then(() => {
+              alert('JSONをクリップボードにコピーしました');
+              logDebug('コピー', 'JSONをクリップボードにコピー完了');
+            })
             .catch(err => {
               console.error('コピー失敗:', err);
-              errorMessage.textContent = 'エラー: コピーに失敗しました。';
+              logDebug('コピーエラー', 'JSONのコピーに失敗', err);
+              errorMessage.textContent = 'エラー: コピーに失敗しました';
+            });
+        }
+      }
+
+      // デバッグ情報をクリップボードにコピー
+      function copyDebugToClipboard() {
+        const text = debugOutput.textContent;
+        if (text) {
+          navigator.clipboard.writeText(text)
+            .then(() => {
+              alert('デバッグ情報をクリップボードにコピーしました');
+              logDebug('デバッグコピー', 'デバッグ情報をクリップボードにコピー完了');
+            })
+            .catch(err => {
+              console.error('デバッグコピー失敗:', err);
+              logDebug('デバッグコピーエラー', 'デバッグ情報のコピーに失敗', err);
+              errorMessage.textContent = 'エラー: デバッグ情報のコピーに失敗しました';
             });
         }
       }
@@ -126,6 +205,7 @@
           a.download = 'metadata.txt';
           a.click();
           URL.revokeObjectURL(url);
+          logDebug('ダウンロード', 'メタデータをTXTとしてダウンロード完了');
         }
       }
 
@@ -136,21 +216,32 @@
           if (file && (file.type === 'video/mp4' || file.type === 'audio/wav')) {
             await extractMetadata(file);
           } else {
-            errorMessage.textContent = 'エラー: MP4またはWAVファイルを選択してください。';
+            errorMessage.textContent = 'エラー: MP4またはWAVファイルを選択してください';
             jsonOutput.textContent = '';
+            debugOutput.textContent = '';
             copyButton.disabled = true;
             downloadButton.disabled = true;
+            copyDebugButton.disabled = true;
+            logDebug('ファイル選択エラー', '不正なファイル形式が選択されました');
           }
         });
 
         copyButton.addEventListener('click', copyToClipboard);
         downloadButton.addEventListener('click', downloadAsTxt);
+        copyDebugButton.addEventListener('click', copyDebugToClipboard);
+
+        debugToggle.addEventListener('change', (event) => {
+          isDebugMode = event.target.checked;
+          debugOutput.style.display = isDebugMode ? 'block' : 'none';
+          copyDebugButton.style.display = isDebugMode ? 'inline-block' : 'none';
+          logDebug('デバッグモード', `デバッグモードを${isDebugMode ? 'ON' : 'OFF'}に切り替え`);
+        });
       }
 
       // パブリックAPI
       return {
         init: init,
-        extractMetadata: extractMetadata // 拡張用に公開
+        extractMetadata: extractMetadata
       };
     })();
 
