@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Metadata Viewer</title>
   <style>
-    /* BEM命名規則を採用したCSS。シンプルでモダンなデザイン */
+    /* BEM命名規則を採用したCSS。モダンでシンプルなデザイン */
     body {
       font-family: Arial, sans-serif;
       margin: 0;
@@ -78,9 +78,10 @@
     <div class="error" id="errorMessage"></div>
   </div>
 
-  <script type="text/javascript" src="https://unpkg.com/mediainfo.js"></script>
-  <script>
-    // モジュールパターンでコードを構造化。拡張性と再利用性を確保
+  <script type="module">
+    // Airbnb JavaScript Style Guideを採用。拡張性と再利用性を確保したモジュールパターン
+    import mediaInfoFactory from 'https://unpkg.com/mediainfo.js';
+
     const MetadataViewer = (function() {
       // プライベート変数
       const fileInput = document.querySelector('.input__file');
@@ -92,9 +93,9 @@
       const copyDebugButton = document.querySelector('#copyDebugButton');
       const errorMessage = document.querySelector('#errorMessage');
       let isDebugMode = false;
-      let mediaInfoInstance = null;
+      let mediainfo = null;
 
-      // デバッグログを追加
+      // デバッグログ関数
       function logDebug(step, message, error = null) {
         if (!isDebugMode) return;
         const timestamp = new Date().toLocaleTimeString('ja-JP');
@@ -110,72 +111,61 @@
       // MediaInfoインスタンスの初期化
       async function initializeMediaInfo() {
         try {
-          logDebug('初期化', 'MediaInfoライブラリをロード中');
-          if (!window.mediaInfoFactory) {
-            throw new Error('mediaInfoFactoryがロードされていません。CDN接続を確認してください。');
-          }
-          mediaInfoInstance = await window.mediaInfoFactory({
-            format: 'JSON', // JSON形式で出力
-            full: true // 全内部タグを表示
-          });
-          logDebug('初期化', 'MediaInfoライブラリロード完了');
+          logDebug('初期化', 'MediaInfoライブラリのロードを開始');
+          mediainfo = await mediaInfoFactory({ format: 'JSON' });
+          logDebug('初期化', 'MediaInfoインスタンスの作成完了');
         } catch (error) {
-          logDebug('初期化エラー', 'MediaInfoライブラリのロードに失敗', error);
-          throw error;
+          console.error('MediaInfo初期化エラー:', error);
+          logDebug('初期化エラー', 'MediaInfoのロードに失敗', error);
+          errorMessage.textContent = 'エラー: MediaInfoライブラリのロードに失敗しました。';
         }
       }
 
       // メタデータ抽出処理
       async function extractMetadata(file) {
         try {
-          // エラーメッセージとデバッグ出力をクリア
+          // エラーメッセージと出力クリア
           errorMessage.textContent = '';
           debugOutput.textContent = '';
           jsonOutput.textContent = 'メタデータを取得中...';
-          logDebug('メタデータ抽出', 'メタデータ抽出プロセスを開始');
+          logDebug('抽出開始', 'メタデータ抽出プロセスを開始');
 
-          // ファイルの検証
+          // ファイル検証
           if (!file) {
             throw new Error('ファイルが選択されていません');
           }
-          logDebug('ファイル検証', `ファイル名: ${file.name}, タイプ: ${file.type}`);
+          logDebug('ファイル検証', `ファイル名: ${file.name}, タイプ: ${file.type}, サイズ: ${file.size}`);
 
-          // サポートされた形式か確認
+          // サポート形式確認
           if (file.type !== 'video/mp4' && file.type !== 'audio/wav') {
-            throw new Error('サポートされていないファイル形式です。MP4またはWAVを選択してください。');
+            throw new Error('サポートされていないファイル形式です');
           }
 
-          // MediaInfoインスタンスの確認と初期化
-          if (!mediaInfoInstance) {
-            await initializeMediaInfo();
+          // MediaInfoが初期化されているか確認
+          if (!mediainfo) {
+            throw new Error('MediaInfoインスタンスが初期化されていません');
           }
-
-          // ファイルサイズを取得
-          const fileSize = file.size;
-          logDebug('ファイルサイズ', `ファイルサイズ: ${fileSize}バイト`);
 
           // チャンク読み込み関数
-          async function readChunk(chunkSize, offset) {
-            logDebug('ファイル読み込み', `チャンク読み込み: offset=${offset}, size=${chunkSize}`);
+          const readChunk = async (chunkSize, offset) => {
+            logDebug('チャンク読み込み', `オフセット: ${offset}, サイズ: ${chunkSize}`);
             const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
             return new Uint8Array(buffer);
-          }
+          };
 
-          // メタデータ取得
-          logDebug('メタデータ取得', 'MediaInfoでメタデータ抽出開始');
-          const result = await mediaInfoInstance.analyzeData(fileSize, readChunk);
-          logDebug('メタデータ取得', 'メタデータ抽出完了');
+          // メタデータ解析
+          logDebug('解析開始', 'MediaInfo.analyzeDataを実行');
+          const result = await mediainfo.analyzeData(file.size, readChunk);
+          logDebug('解析完了', 'メタデータ取得完了');
 
-          // メタデータを表示
-          const metadata = JSON.stringify(JSON.parse(result), null, 2); // JSON文字列をパースして整形
-          jsonOutput.textContent = metadata;
+          // 結果を表示 (JSON文字列)
+          jsonOutput.textContent = result;
           copyButton.disabled = false;
           downloadButton.disabled = false;
           logDebug('表示', 'メタデータをJSON形式で表示完了');
 
-          return metadata;
+          return result;
         } catch (error) {
-          // エラーハンドリング
           console.error('メタデータ取得エラー:', error);
           logDebug('エラー', 'メタデータ取得中にエラーが発生', error);
           errorMessage.textContent = `エラー: メタデータの取得に失敗しました（${error.message}）`;
@@ -183,11 +173,10 @@
           copyButton.disabled = true;
           downloadButton.disabled = true;
           copyDebugButton.disabled = !isDebugMode;
-          throw error;
         }
       }
 
-      // JSONをクリップボードにコピー
+      // JSONコピー関数
       function copyToClipboard() {
         const text = jsonOutput.textContent;
         if (text) {
@@ -204,7 +193,7 @@
         }
       }
 
-      // デバッグ情報をクリップボードにコピー
+      // デバッグ情報コピー関数
       function copyDebugToClipboard() {
         const text = debugOutput.textContent;
         if (text) {
@@ -221,7 +210,7 @@
         }
       }
 
-      // TXTファイルとしてダウンロード
+      // TXTダウンロード関数
       function downloadAsTxt() {
         const text = jsonOutput.textContent;
         if (text) {
@@ -236,17 +225,11 @@
         }
       }
 
-      // クリーンアップ
-      function cleanup() {
-        if (mediaInfoInstance) {
-          mediaInfoInstance.close();
-          mediaInfoInstance = null;
-          logDebug('クリーンアップ', 'MediaInfoインスタンスを閉じました');
-        }
-      }
+      // イベントリスナー設定
+      async function init() {
+        // MediaInfo初期化
+        await initializeMediaInfo();
 
-      // イベントリスナーの設定
-      function init() {
         fileInput.addEventListener('change', async (event) => {
           const file = event.target.files[0];
           if (file && (file.type === 'video/mp4' || file.type === 'audio/wav')) {
@@ -270,22 +253,21 @@
           isDebugMode = event.target.checked;
           debugOutput.style.display = isDebugMode ? 'block' : 'none';
           copyDebugButton.style.display = isDebugMode ? 'inline-block' : 'none';
+          if (isDebugMode && debugOutput.textContent) {
+            copyDebugButton.disabled = false;
+          }
           logDebug('デバッグモード', `デバッグモードを${isDebugMode ? 'ON' : 'OFF'}に切り替え`);
         });
-
-        // ページ離脱時にMediaInfoを閉じる
-        window.addEventListener('beforeunload', cleanup);
       }
 
-      // パブリックAPI
+      // パブリックAPI (拡張用)
       return {
         init: init,
-        extractMetadata: extractMetadata,
-        cleanup: cleanup
+        extractMetadata: extractMetadata
       };
     })();
 
-    // 初期化
+    // 初期化実行
     MetadataViewer.init();
   </script>
 </body>
