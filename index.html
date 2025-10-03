@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Video Metadata Viewer</title>
   <style>
-    /* スタイル: BEM命名規則を採用 */
     body {
       margin: 0;
       padding: 0;
@@ -56,29 +55,30 @@
 </head>
 <body>
   <div class="viewer">
-    <input type="file" class="viewer__input" id="fileInput" accept=".mp4,.wav" />
+    <input
+      type="file"
+      class="viewer__input"
+      id="fileInput"
+      accept=".mp4,.wav"
+      aria-label="ビデオまたはオーディオファイルを選択"
+    />
     <textarea class="viewer__output" id="output" readonly></textarea>
     <div class="viewer__buttons">
-      <button class="viewer__button" id="copyButton">JSONをコピー</button>
-      <button class="viewer__button" id="downloadButton">TXTとしてダウンロード</button>
-      <button class="viewer__button" id="toggleDebugButton">デバッグモード切替</button>
+      <button class="viewer__button" id="copyButton" aria-label="JSONをクリップボードにコピー">JSONをコピー</button>
+      <button class="viewer__button" id="downloadButton" aria-label="TXTとしてダウンロード">TXTとしてダウンロード</button>
+      <button class="viewer__button" id="toggleDebugButton" aria-label="デバッグモードを切り替え">デバッグモード: OFF</button>
     </div>
     <div class="viewer__log" id="logOutput"></div>
   </div>
 
-  <script type="text/javascript" src="https://unpkg.com/mediainfo.js"></script>
+  <script type="text/javascript" src="https://unpkg.com/mediainfo.js@0.2.1/dist/mediainfo.min.js"></script>
   <script>
-    // モジュールパターンでコードをカプセル化
     (function VideoMetadataViewer() {
-      // 定数
       const SUPPORTED_FORMATS = ['mp4', 'wav'];
       const OUTPUT_FORMAT = 'JSON';
-
-      // 状態管理
       let isDebugMode = false;
       let mediaInfoInstance = null;
 
-      // 要素キャッシュ
       const elements = {
         fileInput: document.getElementById('fileInput'),
         output: document.getElementById('output'),
@@ -88,7 +88,6 @@
         logOutput: document.getElementById('logOutput'),
       };
 
-      // ログ管理モジュール
       const Logger = {
         log(message) {
           if (isDebugMode) {
@@ -106,7 +105,6 @@
         },
       };
 
-      // ファイル処理モジュール
       const FileProcessor = {
         async readChunk(file, chunkSize, offset) {
           Logger.log(`チャンク読み込み開始: offset=${offset}, size=${chunkSize}`);
@@ -118,7 +116,6 @@
             throw error;
           }
         },
-
         async analyzeFile(file) {
           Logger.log('ファイル解析開始');
           if (!mediaInfoInstance) {
@@ -136,41 +133,41 @@
             throw error;
           }
         },
-
         validateFile(file) {
           const extension = file.name.split('.').pop().toLowerCase();
           if (!SUPPORTED_FORMATS.includes(extension)) {
             throw new Error(`サポートされていないファイル形式: ${extension}`);
           }
+          if (file.size > 100 * 1024 * 1024) {
+            throw new Error('ファイルが大きすぎます。100MB未満のファイルを選択してください。');
+          }
           Logger.log(`ファイル検証成功: ${file.name}`);
         },
       };
 
-      // 表示管理モジュール
       const View = {
         setOutput(data) {
-          elements.output.value = JSON.stringify(data, null, 2);
+          elements.output.value = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
         },
-
         clearOutput() {
           elements.output.value = '';
         },
-
-        setButtonState(isProcessing) {
+        setButtonState(isProcessing, message = '') {
           elements.fileInput.disabled = isProcessing;
           elements.copyButton.disabled = isProcessing || !elements.output.value;
           elements.downloadButton.disabled = isProcessing || !elements.output.value;
           elements.fileInput.classList.toggle('viewer__button--disabled', isProcessing);
           elements.copyButton.classList.toggle('viewer__button--disabled', isProcessing || !elements.output.value);
           elements.downloadButton.classList.toggle('viewer__button--disabled', isProcessing || !elements.output.value);
+          if (isProcessing && message) {
+            this.setOutput(message);
+          }
         },
-
         copyToClipboard() {
           navigator.clipboard.writeText(elements.output.value)
             .then(() => Logger.log('JSONをクリップボードにコピーしました'))
             .catch((error) => Logger.error('クリップボードコピーエラー', error));
         },
-
         downloadAsTxt() {
           const blob = new Blob([elements.output.value], { type: 'text/plain' });
           const url = URL.createObjectURL(blob);
@@ -183,33 +180,34 @@
         },
       };
 
-      // コントローラーモジュール
       const Controller = {
         async init() {
           Logger.log('アプリケーション初期化開始');
           try {
-            mediaInfoInstance = await window.mediaInfoFactory({ format: OUTPUT_FORMAT });
+            if (!window.MediaInfo) {
+              throw new Error('MediaInfoライブラリがロードされていません。CDNを確認してください。');
+            }
+            mediaInfoInstance = await window.MediaInfo({ format: OUTPUT_FORMAT });
             Logger.log('MediaInfoインスタンス初期化完了');
             this.bindEvents();
             View.setButtonState(false);
           } catch (error) {
             Logger.error('初期化エラー', error);
+            View.setOutput({ error: 'アプリケーションの初期化に失敗しました: ' + error.message });
             View.setButtonState(false);
           }
         },
-
         bindEvents() {
           elements.fileInput.addEventListener('change', () => this.handleFileChange());
           elements.copyButton.addEventListener('click', () => View.copyToClipboard());
           elements.downloadButton.addEventListener('click', () => View.downloadAsTxt());
           elements.toggleDebugButton.addEventListener('click', () => this.toggleDebugMode());
         },
-
         async handleFileChange() {
           const file = elements.fileInput.files[0];
           if (!file) return;
 
-          View.setButtonState(true);
+          View.setButtonState(true, 'ファイルを解析中...');
           View.clearOutput();
           Logger.clear();
 
@@ -219,11 +217,11 @@
             View.setOutput(result);
           } catch (error) {
             View.setOutput({ error: error.message });
+            Logger.error('ファイル処理エラー', error);
           } finally {
             View.setButtonState(false);
           }
         },
-
         toggleDebugMode() {
           isDebugMode = !isDebugMode;
           elements.toggleDebugButton.textContent = `デバッグモード: ${isDebugMode ? 'ON' : 'OFF'}`;
@@ -232,7 +230,6 @@
         },
       };
 
-      // 初期化
       Controller.init();
     })();
   </script>
