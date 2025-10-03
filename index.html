@@ -1,253 +1,374 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>Video Metadata Viewer</title>
-    <style>
-      /* スタイルガイド: Google HTML/CSS Style Guide を採用。シンプルで読みやすく、クラス名はハイフン区切り。 */
-      html,
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Metadata Viewer</title>
+  <style>
+    /* スタイルガイド: Google HTML/CSS Style Guide に基づく。シンプルでメンテナブルなCSS。 */
+    /* 変数定義: CSSカスタムプロパティを使用し、テーマ拡張性を確保。 */
+    :root {
+      --primary-color: #007bff;
+      --error-color: #dc3545;
+      --bg-color: #f8f9fa;
+      --text-color: #333;
+      --border-color: #dee2e6;
+      --padding: 1rem;
+      --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: var(--padding);
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .file-input-wrapper {
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    #fileInput {
+      display: inline-block;
+      padding: 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.25rem;
+      background-color: white;
+    }
+
+    .controls {
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    button {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      margin: 0 0.25rem;
+      border-radius: 0.25rem;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    #debugToggle {
+      background-color: #6c757d;
+    }
+
+    #output {
+      background-color: white;
+      border: 1px solid var(--border-color);
+      border-radius: 0.25rem;
+      padding: var(--padding);
+      white-space: pre-wrap;
+      font-family: monospace;
+      min-height: 400px;
+      overflow: auto;
+    }
+
+    .error {
+      background-color: #f8d7da;
+      color: var(--error-color);
+      border: 1px solid #f5c6cb;
+      padding: var(--padding);
+      border-radius: 0.25rem;
+      margin-top: 1rem;
+    }
+
+    .debug-mode {
+      border-left: 4px solid var(--error-color);
+    }
+
+    /* レスポンシブ: モバイル対応。 */
+    @media (max-width: 768px) {
       body {
-        margin: 0;
-        padding: 0;
-        font-family: Arial, sans-serif;
+        padding: 0.5rem;
       }
-      body * {
-        box-sizing: border-box;
-      }
-      #wrapper {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        padding: 16px;
-        width: 100%;
-      }
-      #file-input {
-        padding-bottom: 16px;
-      }
-      #output-container {
-        flex: 1;
-        overflow: auto;
-        border: 1px solid #ccc;
-        padding: 8px;
-        background-color: #f9f9f9;
-      }
-      #output {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-      }
-      #controls {
-        display: flex;
-        justify-content: space-between;
-        padding: 16px 0;
-      }
-      #debug-toggle {
-        margin-right: 8px;
-      }
-      #error-message {
-        color: red;
-        display: none;
-      }
-    </style>
-    <script type="text/javascript" src="https://unpkg.com/mediainfo.js"></script>
-  </head>
-  <body>
-    <div id="wrapper">
-      <input type="file" id="file-input" name="file-input" accept=".mp4,.wav" />
-      <div id="controls">
-        <button id="copy-button" disabled>JSONをコピー</button>
-        <button id="download-button" disabled>TXTとしてダウンロード</button>
-        <label>
-          <input type="checkbox" id="debug-toggle" /> デバッグモード
-        </label>
-      </div>
-      <div id="output-container">
-        <pre id="output"></pre>
-        <div id="error-message"></div>
-      </div>
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Video Metadata Viewer</h1>
+    <div class="file-input-wrapper">
+      <input type="file" id="fileInput" accept=".mp4,.wav" disabled>
     </div>
-    <script type="text/javascript">
-      // コーディング規約: Airbnb JavaScript Style Guide を採用。変数名はcamelCase、定数はUPPER_CASE、インデントは2スペース。
-      // 標準規格: ECMAScript 2020 (ES11) を基準に、ブラウザ互換性を考慮。
-      // デザインパターン: モジュールパターン (Revealing Module Pattern) を使用して、拡張性を確保。API化しやすくするため、公開メソッドを定義。
-      // コメント: 全て日本語で記述。JSDocスタイルを一部採用し、資産化を容易に。
-      // 工夫: 関数を細かく分割し、エラーハンドリングを集中。デバッグモードで詳細エラーを表示。将来の拡張のため、MediaInfoのオプションをオブジェクトで管理。
+    <div class="controls">
+      <button id="copyBtn" disabled>JSONをコピー</button>
+      <button id="downloadBtn" disabled>TXTとしてダウンロード</button>
+      <button id="debugToggle" disabled>デバッグモード</button>
+    </div>
+    <div id="output">ファイルをアップロードしてください。</div>
+    <div id="errorOutput" class="error" style="display: none;"></div>
+  </div>
 
-      const MetadataViewer = (function () {
-        // プライベート変数: 状態管理
-        let mediaInfoInstance = null;
-        let isDebugMode = false;
-        let currentResult = null;
+  <!-- CDN読み込み: MediaInfo.js を非同期で読み込み、onloadで初期化を保証。拡張時はここに追加のスクリプトを挿入可能。 -->
+  <script type="text/javascript" src="https://unpkg.com/mediainfo.js" onload="initMediaInfo()"></script>
+  <script>
+    // コーディング規約: Airbnb JavaScript Style Guide に基づく。ES6+ シンタックス、const/let、arrow関数、テンプレートリテラル使用。
+    // デザインパターン: モジュールパターン (IIFE) でカプセル化。拡張性確保のため、公開APIをエクスポート風に定義。
+    // コメント: 日本語で記述。JSDoc風で詳細説明。
+    // API化しやすさ: 公開メソッドをオブジェクトにまとめ、外部から呼び出し可能。後続のモジュール拡張を想定。
+    // デバッグ/リファクタリングしやすさ: ログを階層化、try-catch を細かく、状態管理を集中。
 
-        // 定数: エラーメッセージ
-        const ERROR_FAILED = 'メタデータの取得に失敗しました。';
+    /**
+     * MetadataViewer モジュール。
+     * メタデータ取得、表示、操作を管理。
+     * 拡張: 新しいフォーマット追加時は analyzeData をオーバーライド。
+     */
+    const MetadataViewer = (function() {
+      // プライベート変数: 状態管理を集中。デバッグ時は console にログ出力。
+      let mediaInfoInstance = null; // MediaInfo インスタンス。close() でリソース解放。
+      let currentMetadata = null; // 現在のメタデータオブジェクト。JSON出力用。
+      let isDebugMode = false; // デバッグモードフラグ。エラー時自動オン。
+      let fileName = ''; // 現在のファイル名。ダウンロード用。
 
-        /**
-         * MediaInfoインスタンスを初期化。
-         * @returns {Promise} MediaInfoインスタンスのPromise。
-         */
-        async function initMediaInfo() {
+      // DOM要素キャッシュ: パフォーマンスとメンテナンス性向上。
+      const elements = {
+        fileInput: document.getElementById('fileInput'),
+        output: document.getElementById('output'),
+        copyBtn: document.getElementById('copyBtn'),
+        downloadBtn: document.getElementById('downloadBtn'),
+        debugToggle: document.getElementById('debugToggle'),
+        errorOutput: document.getElementById('errorOutput'),
+      };
+
+      /**
+       * ログ出力ヘルパー。デバッグモード時のみコンソール出力。
+       * @param {string} message - ログメッセージ。
+       * @param {any} [data] - 追加データ。
+       */
+      const log = (message, data = null) => {
+        if (isDebugMode) {
+          console.log(`[MetadataViewer] ${message}`, data || '');
+        }
+      };
+
+      /**
+       * エラー表示ヘルパー。デバッグモード時は詳細スタックを表示。
+       * @param {string} message - エラーメッセージ。
+       * @param {Error} [error] - エラーオブジェクト。
+       */
+      const showError = (message, error = null) => {
+        isDebugMode = true;
+        elements.debugToggle.disabled = false;
+        elements.debugToggle.textContent = 'デバッグモード (オン)';
+        elements.output.classList.add('debug-mode');
+
+        let errorHtml = `<strong>エラー: ${message}</strong>`;
+        if (error) {
+          errorHtml += `<br><details><summary>詳細 (スタックトレース)</summary><pre>${error.stack}</pre></details>`;
+          log('Error occurred', { message: error.message, stack: error.stack });
+        }
+        elements.errorOutput.innerHTML = errorHtml;
+        elements.errorOutput.style.display = 'block';
+      };
+
+      /**
+       * 出力更新。JSONをプリティプリントで表示。
+       * @param {object} metadata - メタデータオブジェクト。
+       */
+      const updateOutput = (metadata) => {
+        currentMetadata = metadata;
+        const jsonString = JSON.stringify(metadata, null, 2);
+        elements.output.textContent = jsonString;
+        elements.errorOutput.style.display = 'none';
+        elements.output.classList.remove('debug-mode');
+        elements.copyBtn.disabled = false;
+        elements.downloadBtn.disabled = false;
+        log('Metadata updated', { keys: Object.keys(metadata) });
+      };
+
+      /**
+       * ファイル読み込みと解析。チャンク読み込みで大ファイル対応。
+       * @param {File} file - 選択されたファイル。
+       * @returns {Promise<object>} 解析結果。
+       */
+      const analyzeFile = async (file) => {
+        log('Starting file analysis', { fileName: file.name, size: file.size });
+
+        if (!mediaInfoInstance) {
+          throw new Error('MediaInfo インスタンスが未初期化。initMediaInfo を呼び出してください。');
+        }
+
+        fileName = file.name;
+        const readChunk = async (chunkSize, offset) => {
           try {
-            // オプション: 拡張性を考慮し、オブジェクトで管理。将来的にカスタムパスやフォーマットを追加可能。
-            const options = {
-              format: 'JSON', // JSON形式で出力。詳細なメタデータを取得。
-              full: true, // 全ての内部タグを表示。
-            };
-            mediaInfoInstance = await mediaInfoFactory(options);
-            return mediaInfoInstance;
-          } catch (error) {
-            handleError(error, 'MediaInfo初期化時');
+            const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
+            return new Uint8Array(buffer);
+          } catch (chunkError) {
+            log('Chunk read error', chunkError);
+            throw new Error(`チャンク読み込み失敗: offset=${offset}, size=${chunkSize}`);
           }
+        };
+
+        try {
+          const result = await mediaInfoInstance.analyzeData(file.size, readChunk, {
+            format: 'object', // デフォルト: JavaScriptオブジェクト出力。拡張時は 'JSON' 等に変更可能。
+            full: true, // 全ての内部タグを表示。詳細メタデータ確保。
+          });
+          log('Analysis completed', { trackCount: result.media?.track?.length || 0 });
+          return result;
+        } catch (analyzeError) {
+          log('Analyze error', analyzeError);
+          throw new Error(`メタデータ解析失敗: ${analyzeError.message}`);
+        }
+      };
+
+      /**
+       * ファイル変更イベントハンドラー。
+       * @param {Event} event - change イベント。
+       */
+      const handleFileChange = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // 拡張子チェック: MP4/WAVのみ。拡張時はここに追加。
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!['mp4', 'wav'].includes(ext)) {
+          showError('サポートされていないファイル形式です。MP4 または WAV を選択してください。');
+          return;
         }
 
-        /**
-         * ファイルを解析してメタデータを取得。
-         * @param {File} file - 解析対象のファイル。
-         * @returns {Promise<string>} JSON文字列のPromise。
-         */
-        async function analyzeFile(file) {
-          if (!mediaInfoInstance) {
-            await initMediaInfo();
-          }
+        elements.output.textContent = '解析中...';
+        elements.copyBtn.disabled = true;
+        elements.downloadBtn.disabled = true;
 
-          const fileSize = file.size;
-          const readChunk = async (chunkSize, offset) => {
-            try {
-              const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
-              return new Uint8Array(buffer);
-            } catch (error) {
-              handleError(error, 'チャンク読み込み時');
-            }
-          };
-
-          try {
-            const result = await mediaInfoInstance.analyzeData(fileSize, readChunk);
-            currentResult = result;
-            return result;
-          } catch (error) {
-            handleError(error, 'データ解析時');
-          } finally {
-            // インスタンスを保持して再利用。close()はアプリ終了時のみ。将来的に拡張。
-          }
+        try {
+          const metadata = await analyzeFile(file);
+          updateOutput(metadata);
+        } catch (error) {
+          showError('メタデータの取得に失敗しました。', error);
         }
+      };
 
-        /**
-         * エラーを処理し、表示。
-         * @param {Error} error - エラーオブジェクト。
-         * @param {string} location - エラーが発生した場所。
-         */
-        function handleError(error, location) {
-          const output = document.getElementById('output');
-          const errorMessage = document.getElementById('error-message');
-          output.textContent = '';
-          errorMessage.style.display = 'block';
-          errorMessage.textContent = ERROR_FAILED;
-          if (isDebugMode) {
-            errorMessage.textContent += `\nエラー発生箇所: ${location}\n詳細: ${error.stack || error.message}`;
-          }
-          throw error; // 呼び出し元でキャッチ可能。
-        }
-
-        /**
-         * ファイル変更時のハンドラ。
-         */
-        async function onFileChange() {
-          const fileInput = document.getElementById('file-input');
-          const output = document.getElementById('output');
-          const errorMessage = document.getElementById('error-message');
-          const copyButton = document.getElementById('copy-button');
-          const downloadButton = document.getElementById('download-button');
-
-          errorMessage.style.display = 'none';
-          output.textContent = '処理中...';
-
-          const file = fileInput.files[0];
-          if (!file) return;
-
-          try {
-            const result = await analyzeFile(file);
-            output.textContent = result;
-            copyButton.disabled = false;
-            downloadButton.disabled = false;
-          } catch (error) {
-            // handleErrorで既に処理済み。
-            copyButton.disabled = true;
-            downloadButton.disabled = true;
-          }
-        }
-
-        /**
-         * JSONをコピー。
-         */
-        function copyToClipboard() {
-          if (!currentResult) return;
-          navigator.clipboard.writeText(currentResult).then(() => {
-            alert('JSONをクリップボードにコピーしました。');
-          }).catch((error) => {
-            handleError(error, 'コピー時');
+      /**
+       * コピーボタンクリックハンドラー。
+       */
+      const handleCopy = () => {
+        if (currentMetadata) {
+          navigator.clipboard.writeText(JSON.stringify(currentMetadata, null, 2)).then(() => {
+            alert('JSON がクリップボードにコピーされました。');
+            log('JSON copied to clipboard');
+          }).catch((clipError) => {
+            showError('コピーに失敗しました。', clipError);
           });
         }
+      };
 
-        /**
-         * TXTとしてダウンロード。
-         */
-        function downloadAsTxt() {
-          if (!currentResult) return;
-          const blob = new Blob([currentResult], { type: 'text/plain' });
+      /**
+       * ダウンロードボタンクリックハンドラー。
+       */
+      const handleDownload = () => {
+        if (currentMetadata) {
+          const blob = new Blob([JSON.stringify(currentMetadata, null, 2)], { type: 'text/plain' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = 'metadata.txt';
-          document.body.appendChild(a);
+          a.download = `${fileName}_metadata.txt`;
           a.click();
-          document.body.removeChild(a);
           URL.revokeObjectURL(url);
+          log('TXT downloaded', { fileName });
         }
+      };
 
+      /**
+       * デバッグモードトグル。
+       */
+      const toggleDebug = () => {
+        isDebugMode = !isDebugMode;
+        elements.debugToggle.textContent = isDebugMode ? 'デバッグモード (オフ)' : 'デバッグモード (オン)';
+        log('Debug mode toggled', { enabled: isDebugMode });
+        // 拡張: ログレベル変更や追加UI表示をここに。
+      };
+
+      // 公開API: モジュールパターンの戻り値。外部からの拡張/テスト用。
+      return {
         /**
-         * デバッグモードのトグル。
+         * MediaInfo初期化。グローバルで一度だけ呼び出し。
+         * @param {Function} [onReady] - 準備完了コールバック。
          */
-        function toggleDebugMode(event) {
-          isDebugMode = event.target.checked;
-          // エラーが既に表示されている場合、再表示。
-          if (document.getElementById('error-message').style.display === 'block') {
-            document.getElementById('error-message').textContent = ERROR_FAILED;
-            if (isDebugMode) {
-              // 詳細を追加（エラーが保持されていない場合、簡易表示）。
-              document.getElementById('error-message').textContent += '\nデバッグモード有効: 詳細はコンソールを確認。';
-              console.error('デバッグログ:', currentResult || 'なし');
-            }
+        init: (onReady = null) => {
+          if (mediaInfoInstance) {
+            log('MediaInfo already initialized');
+            if (onReady) onReady();
+            return;
           }
-        }
+
+          // 非同期初期化: Promise で待機。コールバックもサポート（レガシー対応）。
+          mediaInfoFactory({ format: 'object', full: true })
+            .then((instance) => {
+              mediaInfoInstance = instance;
+              elements.fileInput.disabled = false;
+              elements.fileInput.addEventListener('change', handleFileChange);
+              elements.copyBtn.addEventListener('click', handleCopy);
+              elements.downloadBtn.addEventListener('click', handleDownload);
+              elements.debugToggle.addEventListener('click', toggleDebug);
+              log('MediaInfo initialized successfully');
+              if (onReady) onReady();
+            })
+            .catch((initError) => {
+              showError('MediaInfo初期化に失敗しました。', initError);
+              log('Init error', initError);
+            });
+        },
 
         /**
-         * 初期化とイベントリスナーの設定。
+         * クリーンアップ。ページアンロード時呼び出し推奨。
          */
-        function init() {
-          const fileInput = document.getElementById('file-input');
-          const copyButton = document.getElementById('copy-button');
-          const downloadButton = document.getElementById('download-button');
-          const debugToggle = document.getElementById('debug-toggle');
+        close: () => {
+          if (mediaInfoInstance) {
+            mediaInfoInstance.close();
+            mediaInfoInstance = null;
+            log('MediaInfo closed');
+          }
+        },
 
-          fileInput.addEventListener('change', onFileChange);
-          copyButton.addEventListener('click', copyToClipboard);
-          downloadButton.addEventListener('click', downloadAsTxt);
-          debugToggle.addEventListener('change', toggleDebugMode);
+        // テスト/拡張用: 内部状態取得。
+        getState: () => ({ isDebugMode, hasInstance: !!mediaInfoInstance }),
+      };
+    })();
 
-          // 初期化時にMediaInfoをプリロード（オプション）。
-          initMediaInfo().catch(() => {}); // サイレント失敗。
-        }
+    /**
+     * グローバル初期化関数。CDN onload で呼び出し。
+     * リファクタリングしやすさ: ここをエントリーポイントに。
+     */
+    function initMediaInfo() {
+      MetadataViewer.init(() => {
+        console.log('Video Metadata Viewer ready. 拡張可能: 新しい解析器を analyzeFile に追加。');
+      });
 
-        // 公開API: 拡張時に外部から呼び出し可能。
-        return {
-          init,
-          analyzeFile, // API化のため公開。
-          close: () => mediaInfoInstance && mediaInfoInstance.close(),
-        };
-      })();
+      // ページアンロード時クリーンアップ。リソースリーク防止。
+      window.addEventListener('beforeunload', () => MetadataViewer.close());
+    }
 
-      // アプリ起動。
-      MetadataViewer.init();
-    </script>
-  </body>
+    // ポリフィル: 古いブラウザ対応（オプション）。拡張時はここに。
+    if (!window.mediaInfoFactory) {
+      console.error('MediaInfo.js の読み込みに失敗しました。CDNを確認してください。');
+    }
+  </script>
+</body>
 </html>
