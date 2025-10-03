@@ -78,7 +78,7 @@
     <div class="error" id="errorMessage"></div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/ffprobe-static@1.0.0/ffprobe.min.js"></script>
+  <script type="text/javascript" src="https://unpkg.com/mediainfo.js"></script>
   <script>
     // モジュールパターンでコードを構造化
     const MetadataViewer = (function() {
@@ -90,8 +90,8 @@
       const copyButton = document.querySelector('#copyButton');
       const downloadButton = document.querySelector('#downloadButton');
       const copyDebugButton = document.querySelector('#copyDebugButton');
-      const errorMessage = document.querySelector('#errorMessage');
       let isDebugMode = false;
+      let mediaInfo = null;
 
       // デバッグログを追加
       function logDebug(step, message, error = null) {
@@ -104,6 +104,21 @@
         debugOutput.textContent += log + '\n\n';
         debugOutput.style.display = 'block';
         copyDebugButton.disabled = false;
+      }
+
+      // MediaInfoの初期化
+      async function initializeMediaInfo() {
+        try {
+          logDebug('初期化', 'MediaInfoライブラリをロード開始');
+          if (!window.mediaInfoFactory) {
+            throw new Error('mediaInfoFactoryがロードされていません');
+          }
+          mediaInfo = await window.mediaInfoFactory({ format: 'JSON', full: true });
+          logDebug('初期化', 'MediaInfoライブラリをロード完了');
+        } catch (error) {
+          logDebug('初期化エラー', 'MediaInfoライブラリのロードに失敗', error);
+          throw error;
+        }
       }
 
       // メタデータ抽出処理
@@ -126,28 +141,36 @@
             throw new Error('サポートされていないファイル形式です');
           }
 
-          // FileReaderでファイルを読み込み
-          logDebug('ファイル読み込み', 'FileReaderでファイルを読み込み開始');
-          const arrayBuffer = await file.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
-          logDebug('ファイル読み込み', 'ファイルデータをArrayBufferに変換完了');
-
-          // ffprobeを使用してメタデータを取得
-          logDebug('メタデータ取得', 'FFprobeでメタデータ抽出開始');
-          if (!window.FFprobe) {
-            throw new Error('FFprobeライブラリがロードされていません');
+          // MediaInfoが未初期化の場合、初期化
+          if (!mediaInfo) {
+            await initializeMediaInfo();
           }
-          const result = await window.FFprobe.getInfo(uint8Array, file.name);
+
+          // ファイルサイズを取得
+          const fileSize = file.size;
+          logDebug('ファイル読み込み', `ファイルサイズ: ${fileSize} バイト`);
+
+          // readChunk関数を定義
+          async function readChunk(chunkSize, offset) {
+            logDebug('ファイル読み込み', `チャンク読み込み: offset=${offset}, size=${chunkSize}`);
+            const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
+            return new Uint8Array(buffer);
+          }
+
+          // MediaInfoでメタデータを取得
+          logDebug('メタデータ取得', 'MediaInfoでメタデータ抽出開始');
+          const result = await mediaInfo.analyzeData(fileSize, readChunk);
           logDebug('メタデータ取得', 'メタデータ抽出完了');
 
           // メタデータを表示
-          const metadata = JSON.stringify(result, null, 2);
-          jsonOutput.textContent = metadata;
+          const metadata = JSON.parse(result); // JSON文字列をパース
+          const formattedMetadata = JSON.stringify(metadata, null, 2);
+          jsonOutput.textContent = formattedMetadata;
           copyButton.disabled = false;
           downloadButton.disabled = false;
           logDebug('表示', 'メタデータをJSON形式で表示完了');
 
-          return metadata;
+          return formattedMetadata;
         } catch (error) {
           // エラーハンドリング
           console.error('メタデータ取得エラー:', error);
@@ -238,15 +261,30 @@
         });
       }
 
+      // MediaInfoのクリーンアップ
+      function cleanup() {
+        if (mediaInfo) {
+          mediaInfo.close();
+          mediaInfo = null;
+          logDebug('クリーンアップ', 'MediaInfoインスタンスを閉じました');
+        }
+      }
+
       // パブリックAPI
       return {
         init: init,
-        extractMetadata: extractMetadata
+        extractMetadata: extractMetadata,
+        cleanup: cleanup
       };
     })();
 
     // 初期化
     MetadataViewer.init();
+
+    // ページ離脱時にMediaInfoを閉じる
+    window.addEventListener('beforeunload', () => {
+      MetadataViewer.cleanup();
+    });
   </script>
 </body>
 </html>
