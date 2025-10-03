@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Metadata Viewer</title>
   <style>
-    /* BEM命名規則を採用したCSS */
+    /* BEM命名規則を採用したCSS。シンプルでモダンなデザイン */
     body {
       font-family: Arial, sans-serif;
       margin: 0;
@@ -80,7 +80,7 @@
 
   <script type="text/javascript" src="https://unpkg.com/mediainfo.js"></script>
   <script>
-    // モジュールパターンでコードを構造化
+    // モジュールパターンでコードを構造化。拡張性と再利用性を確保
     const MetadataViewer = (function() {
       // プライベート変数
       const fileInput = document.querySelector('.input__file');
@@ -90,8 +90,9 @@
       const copyButton = document.querySelector('#copyButton');
       const downloadButton = document.querySelector('#downloadButton');
       const copyDebugButton = document.querySelector('#copyDebugButton');
+      const errorMessage = document.querySelector('#errorMessage');
       let isDebugMode = false;
-      let mediaInfo = null;
+      let mediaInfoInstance = null;
 
       // デバッグログを追加
       function logDebug(step, message, error = null) {
@@ -106,15 +107,18 @@
         copyDebugButton.disabled = false;
       }
 
-      // MediaInfoの初期化
+      // MediaInfoインスタンスの初期化
       async function initializeMediaInfo() {
         try {
-          logDebug('初期化', 'MediaInfoライブラリをロード開始');
+          logDebug('初期化', 'MediaInfoライブラリをロード中');
           if (!window.mediaInfoFactory) {
-            throw new Error('mediaInfoFactoryがロードされていません');
+            throw new Error('mediaInfoFactoryがロードされていません。CDN接続を確認してください。');
           }
-          mediaInfo = await window.mediaInfoFactory({ format: 'JSON', full: true });
-          logDebug('初期化', 'MediaInfoライブラリをロード完了');
+          mediaInfoInstance = await window.mediaInfoFactory({
+            format: 'JSON', // JSON形式で出力
+            full: true // 全内部タグを表示
+          });
+          logDebug('初期化', 'MediaInfoライブラリロード完了');
         } catch (error) {
           logDebug('初期化エラー', 'MediaInfoライブラリのロードに失敗', error);
           throw error;
@@ -128,7 +132,7 @@
           errorMessage.textContent = '';
           debugOutput.textContent = '';
           jsonOutput.textContent = 'メタデータを取得中...';
-          logDebug('初期化', 'メタデータ抽出プロセスを開始');
+          logDebug('メタデータ抽出', 'メタデータ抽出プロセスを開始');
 
           // ファイルの検証
           if (!file) {
@@ -138,39 +142,38 @@
 
           // サポートされた形式か確認
           if (file.type !== 'video/mp4' && file.type !== 'audio/wav') {
-            throw new Error('サポートされていないファイル形式です');
+            throw new Error('サポートされていないファイル形式です。MP4またはWAVを選択してください。');
           }
 
-          // MediaInfoが未初期化の場合、初期化
-          if (!mediaInfo) {
+          // MediaInfoインスタンスの確認と初期化
+          if (!mediaInfoInstance) {
             await initializeMediaInfo();
           }
 
           // ファイルサイズを取得
           const fileSize = file.size;
-          logDebug('ファイル読み込み', `ファイルサイズ: ${fileSize} バイト`);
+          logDebug('ファイルサイズ', `ファイルサイズ: ${fileSize}バイト`);
 
-          // readChunk関数を定義
+          // チャンク読み込み関数
           async function readChunk(chunkSize, offset) {
             logDebug('ファイル読み込み', `チャンク読み込み: offset=${offset}, size=${chunkSize}`);
             const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
             return new Uint8Array(buffer);
           }
 
-          // MediaInfoでメタデータを取得
+          // メタデータ取得
           logDebug('メタデータ取得', 'MediaInfoでメタデータ抽出開始');
-          const result = await mediaInfo.analyzeData(fileSize, readChunk);
+          const result = await mediaInfoInstance.analyzeData(fileSize, readChunk);
           logDebug('メタデータ取得', 'メタデータ抽出完了');
 
           // メタデータを表示
-          const metadata = JSON.parse(result); // JSON文字列をパース
-          const formattedMetadata = JSON.stringify(metadata, null, 2);
-          jsonOutput.textContent = formattedMetadata;
+          const metadata = JSON.stringify(JSON.parse(result), null, 2); // JSON文字列をパースして整形
+          jsonOutput.textContent = metadata;
           copyButton.disabled = false;
           downloadButton.disabled = false;
           logDebug('表示', 'メタデータをJSON形式で表示完了');
 
-          return formattedMetadata;
+          return metadata;
         } catch (error) {
           // エラーハンドリング
           console.error('メタデータ取得エラー:', error);
@@ -180,6 +183,7 @@
           copyButton.disabled = true;
           downloadButton.disabled = true;
           copyDebugButton.disabled = !isDebugMode;
+          throw error;
         }
       }
 
@@ -232,6 +236,15 @@
         }
       }
 
+      // クリーンアップ
+      function cleanup() {
+        if (mediaInfoInstance) {
+          mediaInfoInstance.close();
+          mediaInfoInstance = null;
+          logDebug('クリーンアップ', 'MediaInfoインスタンスを閉じました');
+        }
+      }
+
       // イベントリスナーの設定
       function init() {
         fileInput.addEventListener('change', async (event) => {
@@ -259,15 +272,9 @@
           copyDebugButton.style.display = isDebugMode ? 'inline-block' : 'none';
           logDebug('デバッグモード', `デバッグモードを${isDebugMode ? 'ON' : 'OFF'}に切り替え`);
         });
-      }
 
-      // MediaInfoのクリーンアップ
-      function cleanup() {
-        if (mediaInfo) {
-          mediaInfo.close();
-          mediaInfo = null;
-          logDebug('クリーンアップ', 'MediaInfoインスタンスを閉じました');
-        }
+        // ページ離脱時にMediaInfoを閉じる
+        window.addEventListener('beforeunload', cleanup);
       }
 
       // パブリックAPI
@@ -280,11 +287,6 @@
 
     // 初期化
     MetadataViewer.init();
-
-    // ページ離脱時にMediaInfoを閉じる
-    window.addEventListener('beforeunload', () => {
-      MetadataViewer.cleanup();
-    });
   </script>
 </body>
 </html>
